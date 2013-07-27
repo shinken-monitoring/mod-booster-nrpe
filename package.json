@@ -1,21 +1,21 @@
 {
-  "name": "ip-tag",
+  "name": "booster-nrpe ",
   "types": ["module"],
   "version": "1.4",
-  "homepage": "http://github.com/shinken-monitoring/mod-ip-tag",
+  "homepage": "http://github.com/shinken-monitoring/mod-booster-nrpe ",
   "author": "Jean Gabès",
-  "description": "Tag host by their IP ranges",
+  "description": "NRPE module to handle check_nrpe",
   "contributors": [
     {
       "name": "Jean Gabès",
       "email": "naparuba@gmail.com"
     }
   ],
-  "repository": "https://github.com/shinken-monitoring/mod-ip-tag",
+  "repository": "https://github.com/shinken-monitoring/mod-booster-nrpe ",
   "keywords": [
     "module",
-    "arbiter",
-    "ip"
+    "poller",
+    "nrpe"
   ],
   "dependencies": {
     "shinken": ">=1.4"
