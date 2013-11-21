@@ -154,8 +154,8 @@ class NRPE:
             return (self.rc, self.message)
 
         self.rc = response[3]
-        # the output is fill with \x00 at the end. We
-        # should clean them
+        # the output is padded with \x00 at the end so
+        # we remove it.
         self.message = response[4].strip('\x00')
         crc_orig = response[2]
 
@@ -227,7 +227,7 @@ class NRPEAsyncClient(asyncore.dispatcher):
             message = 'Error : connection timeout after %d seconds' % self.timeout
             self.set_exit(rc, message)
 
-    # We got a read for the socket. We do it if we do not already
+    # We got a read from the socket and keep receiving until it has
     # finished. Maybe it's just a SSL handshake continuation, if so
     # we continue it and wait for handshake finish
     def handle_read(self):
@@ -250,7 +250,7 @@ class NRPEAsyncClient(asyncore.dispatcher):
                 return
 
             # We can have nothing, it's just that the server
-            # do not want to talk to us :(
+            # does not want to talk to us :(
             except SSLZeroReturnError:
                 buf = ''
 
@@ -260,13 +260,13 @@ class NRPEAsyncClient(asyncore.dispatcher):
             except SSLError:
                 buf = ''
 
-            # Maybe we got nothing from the server (it refuse our ip,
-            # or refuse arguments...)
+            # Maybe we got nothing from the server (it refused our IP,
+            # or our arguments...)
             if len(buf) != 0:
                 (rc, message) = self.nrpe.read(buf)
                 self.set_exit(rc, message)
             else:
-                self.set_exit(2, "Error : nothing return from the nrpe server")
+                self.set_exit(2, "Error : Empty response from the NRPE server")
 
             # We can close the socket, we are done
             self.close()
@@ -350,13 +350,13 @@ class Nrpe_poller(BaseModule):
     def __init__(self, mod_conf):
         BaseModule.__init__(self, mod_conf)
 
-    # Called by poller to say 'let's prepare yourself guy'
+    # Called by poller to say 'get ready'
     def init(self):
         logger.info("[NRPEPoller] Initialization of the nrpe poller module")
         self.i_am_dying = False
 
     # Get new checks if less than nb_checks_max
-    # If no new checks got and no check in queue,
+    # If we get no new checks and there are no checks in the queue,
     # sleep for 1 sec
     # REF: doc/shinken-action-queues.png (3)
     def get_new_checks(self):
@@ -381,7 +381,7 @@ class Nrpe_poller(BaseModule):
                 chk.status = 'launched'
                 chk.check_time = now
 
-                # Want the args of the commands so we parse it like a shell
+                # We want the args of the commands so we parse it like a shell
                 # shlex want str only
                 clean_command = shlex.split(chk.command.encode('utf8', 'ignore'))
 
@@ -516,7 +516,7 @@ class Nrpe_poller(BaseModule):
             try:
                 cmsg = c.get(block=False)
                 if cmsg.get_type() == 'Die':
-                    logger.info("[NRPEPoller] Dad say we are dying...")
+                    logger.info("[NRPEPoller] Dad says we should die...")
                     break
             except:
                 pass
