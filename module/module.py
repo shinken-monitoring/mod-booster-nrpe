@@ -156,7 +156,7 @@ class NRPE:
         self.rc = response[3]
         # the output is padded with \x00 at the end so
         # we remove it.
-        self.message = response[4].strip('\x00')
+        self.message = re.sub('\x00.*$', '', response[4])
         crc_orig = response[2]
 
         return (self.rc, self.message)
