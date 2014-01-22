@@ -46,7 +46,7 @@ class TestNrpePoller(ShinkenTest):
     # Uncomment this is you want to use a specific configuration
     # for your test
     #def setUp(self):
-    #    self.setup_with_file('etc/nagios_module_hack_cmd_poller_tag.cfg')
+    #    self.setup_with_file('etc/shinken_module_hack_cmd_poller_tag.cfg')
 
     def test_nrpe_poller(self):
         if os.name == 'nt':
