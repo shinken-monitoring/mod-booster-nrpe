@@ -38,6 +38,7 @@ import getopt
 import shlex
 import traceback
 import cStringIO
+import re
 
 
 try:
