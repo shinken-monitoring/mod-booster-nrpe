@@ -22,7 +22,7 @@ The definition is very easy (and you probably just have to uncomment it):
 ::
 
   define module{
-       module_name       NrpeBooster
+       module_name       booster-nrpe
        module_type       nrpe_poller
   }
 
@@ -32,7 +32,7 @@ Then you add it to your poller object:
 
   define poller {
       [...]
-      modules   NrpeBooster
+      modules    booster-nrpe
   }
 
 Then just tag all your check_nrpe commands with this module:
