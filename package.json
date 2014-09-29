@@ -1,7 +1,7 @@
 {
   "name": "booster-nrpe ",
   "types": ["module"],
-  "version": "1.4.1",
+  "version": "1.4.2",
   "homepage": "http://github.com/shinken-monitoring/mod-booster-nrpe ",
   "author": "Jean Gabès",
   "description": "NRPE module to handle check_nrpe",
