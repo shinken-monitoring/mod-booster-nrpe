@@ -181,7 +181,11 @@ class NRPEAsyncClient(asyncore.dispatcher, object):
         self.nrpe.init_query(host, port, use_ssl, msg)
 
         # And now we create a socket for our connection
-        self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            family, _, _, _, _ = socket.getaddrinfo(host, port)[0]
+        except socket.gaierror, exp:
+            self.set_exit(2, str(exp))
+        self.create_socket(family, socket.SOCK_STREAM)
 
         if use_ssl:
             # The admin want a ssl connection, but there is not openssl
