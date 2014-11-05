@@ -9,6 +9,10 @@
     {
       "name": "Jean Gabès",
       "email": "naparuba@gmail.com"
+    },
+    {
+      "name": "Magnus Appelquist",
+      "email": "magnus@appelquist.name"
     }
   ],
   "repository": "https://github.com/shinken-monitoring/mod-booster-nrpe ",
