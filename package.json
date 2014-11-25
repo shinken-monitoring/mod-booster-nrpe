@@ -1,8 +1,8 @@
 {
-  "name": "booster-nrpe ",
+  "name": "booster-nrpe",
   "types": ["module"],
   "version": "1.4.2",
-  "homepage": "http://github.com/shinken-monitoring/mod-booster-nrpe ",
+  "homepage": "http://github.com/shinken-monitoring/mod-booster-nrpe",
   "author": "Jean Gabès",
   "description": "NRPE module to handle check_nrpe",
   "contributors": [
@@ -15,7 +15,7 @@
       "email": "magnus@appelquist.name"
     }
   ],
-  "repository": "https://github.com/shinken-monitoring/mod-booster-nrpe ",
+  "repository": "https://github.com/shinken-monitoring/mod-booster-nrpe",
   "keywords": [
     "module",
     "poller",
