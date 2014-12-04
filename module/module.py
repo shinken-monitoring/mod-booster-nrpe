@@ -185,6 +185,7 @@ class NRPEAsyncClient(asyncore.dispatcher, object):
             family, _, _, _, _ = socket.getaddrinfo(host, port)[0]
         except socket.gaierror, exp:
             self.set_exit(2, str(exp))
+            return
         self.create_socket(family, socket.SOCK_STREAM)
 
         if use_ssl:
