@@ -192,8 +192,8 @@ class NRPEAsyncClient(asyncore.dispatcher, object):
             # The admin want a ssl connection, but there is not openssl
             # lib installed :(
             if OpenSSL is None:
-                self.set_exit(2, "Error : the openssl lib for Python is not installed.")
-                return
+                logger.warning("Python openssl lib is not installed! Cannot use ssl, switching back to no-ssl mode")
+                self.use_ssl = False  # We force to False to avoid exception in the close method
             else:
                 # Ok we can wrap the socket
                 #print "Wrapping ssl!"
