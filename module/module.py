@@ -40,6 +40,7 @@ import traceback
 import cStringIO
 import re
 
+communication_errors = (socket.error,)
 
 try:
     import OpenSSL
@@ -47,12 +48,16 @@ try:
     SSLSysCallError = OpenSSL.SSL.SysCallError
     SSLZeroReturnError = OpenSSL.SSL.ZeroReturnError
     SSLError = OpenSSL.SSL.Error
+    SSLWantReadOrWrite = (OpenSSL.SSL.WantReadError,
+                          OpenSSL.SSL.WantWriteError)
 except ImportError:
+    communication_errors += (SSLError,)
     OpenSSL = None
     SSLWantReadError = None
     SSLSysCallError = None
     SSLZeroReturnError = None
     SSLError = None
+    SSLWantReadOrWrite = None
 
 from Queue import Empty
 from shinken.basemodule import BaseModule
@@ -175,6 +180,7 @@ class NRPEAsyncClient(asyncore.dispatcher, object):
         self.start_time = time.time()
         self.timeout = timeout
         self.unknown_on_timeout = unknown_on_timeout
+        self.readwrite_error = False  # there was an error at the tcp level..
 
         # Instantiate our nrpe helper
         self.nrpe = NRPE()
@@ -267,45 +273,35 @@ class NRPEAsyncClient(asyncore.dispatcher, object):
     # finished. Maybe it's just a SSL handshake continuation, if so
     # we continue it and wait for handshake finish
     def handle_read(self):
-        if not self.is_done():
+        if self.is_done():
+            return
+        try:
+            self._handle_read()
+        except communication_errors as err:
+            self.readwrite_error = True
+            self.set_exit(2, "Error on read: %s" % err)
+
+    def _handle_read(self):
+        rc = 2  # by default we'll return an RC of 2 ..
+        try:
+            buf = self.recv(1034)
+        # if we are in ssl, there can be a handshake
+        # problem: we can't talk until we finished it
+        except SSLWantReadOrWrite:
             try:
-                buf = self.recv(1034)
-            except socket.error, exp:
-                logger.debug("[NRPEPoller] Exiting %s" % exp)
-                self.set_exit(2, str(exp))
-                return
-
-            # if we are in ssl, there can be a handshake
-            # problem: we can't talk until we finished
-            # it, sorry
-            except SSLWantReadError, exp:
-                try:
-                    self.socket.do_handshake()
-                except SSLWantReadError, exp:
-                    return
-                return
-
-            # We can have nothing, it's just that the server
-            # does not want to talk to us :(
-            except SSLZeroReturnError:
-                buf = ''
-
-            except SSLSysCallError:
-                buf = ''
-
-            except SSLError:
-                buf = ''
-
+                self.socket.do_handshake()
+            except SSLWantReadOrWrite:
+                pass
+            return
+        else:
             # Maybe we got nothing from the server (it refused our IP,
             # or our arguments...)
-            if len(buf) != 0:
-                (rc, message) = self.nrpe.read(buf)
-                self.set_exit(rc, message)
+            if buf:
+                rc, message = self.nrpe.read(buf)
             else:
-                self.set_exit(2, "Error : Empty response from the NRPE server")
+                message = "Error: Empty response from the NRPE server."
 
-            # We can close the socket, we are done
-            self.close()
+        self.set_exit(rc, message)
 
     # Did we finished our job?
     def writable(self):
@@ -317,23 +313,22 @@ class NRPEAsyncClient(asyncore.dispatcher, object):
     def handle_write(self):
         if self.writable():
             try:
-                sent = self.send(self.nrpe.query)
-            except socket.error, exp:
-                # In case of problem, just bail out
-                # as error
-                self.set_exit(2, str(exp))
-                return
+                self._handle_write()
+            except communication_errors as err:
+                self.readwrite_error = True
+                self.set_exit(2, 'Error on write: %s' % err)
 
-            # if we are in ssl, there can be a handshake
-            # problem: we can't talk until we finished
-            # it, sorry
-            except SSLWantReadError, exp:
-                try:
-                    self.socket.do_handshake()
-                except SSLWantReadError, exp:
-                    # still not finished, we continue
-                    return
-                return
+    def _handle_write(self):
+        try:
+            sent = self.send(self.nrpe.query)
+        except SSLWantReadOrWrite:
+            # SSL write/send can require a read ! yes ;)
+            try:
+                self.socket.do_handshake()
+            except SSLWantReadOrWrite:
+                # still not finished, we continue
+                pass
+        else:
             # Maybe we did not send all our query
             # so we bufferize it
             self.nrpe.query = self.nrpe.query[sent:]
@@ -391,21 +386,18 @@ class Nrpe_poller(BaseModule):
         logger.info("[NRPEPoller] Initialization of the nrpe poller module")
         self.i_am_dying = False
 
-    # Get new checks if less than nb_checks_max
-    # If we get no new checks and there are no checks in the queue,
-    # sleep for 1 sec
+    # Get new checks
     # REF: doc/shinken-action-queues.png (3)
     def get_new_checks(self):
-        try:
-            while(True):
-                #print "I", self.id, "wait for a message"
+        while True:
+            try:
                 msg = self.s.get(block=False)
-                if msg is not None:
-                    self.checks.append(msg.get_data())
-                #print "I", self.id, "I've got a message!"
-        except Empty, exp:
-            if len(self.checks) == 0:
-                time.sleep(1)
+            except Empty:
+                return
+            if msg is not None:
+                check = msg.get_data()
+                check.retried = 0
+                self.checks.append(check)
 
     # Launch checks that are in status
     # REF: doc/shinken-action-queues.png (4)
@@ -463,36 +455,39 @@ class Nrpe_poller(BaseModule):
         asyncore.poll2(timeout=1)
 
         # Now we look for finished checks
-        for c in self.checks:
+        for check in self.checks:
             # First manage check in error, bad formed
-            if c.status == 'done':
-                to_del.append(c)
-                try:
-                    self.returns_queue.put(c)
-                except IOError, exp:
-                    logger.error("[NRPEPoller] Exiting: %s" %  exp)
-                    sys.exit(2)
-                continue
-            # Then we check for good checks
-            if c.status == 'launched' and c.con.is_done():
-                n = c.con
-                c.status = 'done'
-                c.exit_status = getattr(n, 'rc', 3)
-                c.get_outputs(getattr(n, 'message', 'Error in launching command.'), 8012)
-                c.execution_time = getattr(n, 'execution_time', 0.0)
+            if check.status == 'done':
+                to_del.append(check)
+                self.returns_queue.put(check)
 
-                # unlink our object from the original check
-                if hasattr(c, 'con'):
-                    delattr(c, 'con')
+            # Then we check for good checks
+            elif check.status == 'launched' and check.con.is_done():
+                con = check.con
+                # unlink our object from the original check,
+                # this might be necessary to allow the check to be again
+                # serializable..
+                del check.con
+                if con.readwrite_error and check.retried < 2:
+                    logger.warning('%s@%s: IO error, retrying 1 more time..',
+                                   check.command, con.nrpe.host)
+                    check.retried += 1
+                    check.status = 'queue'
+                    continue
+
+                if check.retried:
+                    logger.info('%s@%s: Successfully retried check %s :)',
+                                check.command, con.nrpe.host)
+
+                check.status = 'done'
+                check.exit_status = con.rc
+                check.get_outputs(con.message, 8012)
+                check.execution_time = con.execution_time
 
                 # and set this check for deleting
                 # and try to send it
-                to_del.append(c)
-                try:
-                    self.returns_queue.put(c)
-                except IOError, exp:
-                    logger.error("[NRPEPoller]Exiting: %s" %  exp)
-                    sys.exit(2)
+                to_del.append(check)
+                self.returns_queue.put(check)
 
         # And delete finished checks
         for chk in to_del:
