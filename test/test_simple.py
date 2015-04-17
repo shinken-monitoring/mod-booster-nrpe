@@ -23,18 +23,41 @@
 # This file is used to test reading and processing of config files
 #
 
-import os
-from Queue import Empty
-from multiprocessing import Queue, Manager, active_children
 
-from shinken_test import *
-from shinken.log import logger
+import asyncore
+
+import os
+import socket
+import threading
+import time
+import mock
+
+import logging
+logging.basicConfig(level=logging.DEBUG)
+
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+from multiprocessing import Queue, Manager
+from shinken.check import Check
+
+try:
+    import unittest2 as unittest
+except ImportError:
+    import unittest
+
 from shinken.objects.module import Module
 from shinken.modulesctx import modulesctx
+from shinken.message import Message
+
+
+THIS_DIR = os.path.abspath(os.path.dirname(__file__))
+
+modulesctx.set_modulesdir(os.path.dirname(THIS_DIR))
 nrpe_poller = modulesctx.get_module('booster_nrpe')
 get_instance = nrpe_poller.get_instance
 
-from shinken.message import Message
 
 modconf = Module()
 modconf.module_name = "NrpePoller"
@@ -42,29 +65,30 @@ modconf.module_type = nrpe_poller.properties['type']
 modconf.properties = nrpe_poller.properties.copy()
 
 
-class TestNrpePoller(ShinkenTest):
-    # Uncomment this is you want to use a specific configuration
-    # for your test
-    #def setUp(self):
-    #    self.setup_with_file('etc/shinken_module_hack_cmd_poller_tag.cfg')
+class NrpePollerTestMixin(object):
+
+    def setUp(self):
+        super(NrpePollerTestMixin, self).setUp()
+        logger.setLevel(logging.DEBUG)
+
+    def _setup_nrpe(self, modconf):
+        mod = nrpe_poller.booster_nrpe.Nrpe_poller(modconf)
+        inst = get_instance(mod)
+        inst.init()
+        return inst
+
+
+@unittest.skipIf(os.name == 'nt', "nrpe poller don't work here")
+class TestNrpePoller(NrpePollerTestMixin,
+                     unittest.TestCase):
 
     def test_nrpe_poller(self):
-        if os.name == 'nt':
-            return
-        
 
-        mod = nrpe_poller.Nrpe_poller(modconf)
-
-        sl = get_instance(mod)
-        # Look if we really change our commands
-
-        print sl.__dict__
-        sl.id = 1
-        sl.i_am_dying = False
+        inst = self._setup_nrpe(modconf)
 
         manager = Manager()
         to_queue = manager.Queue()
-        from_queue = manager.Queue() # list()
+        from_queue = manager.Queue()
         control_queue = Queue()
 
         # We prepare a check in the to_queue
@@ -86,24 +110,14 @@ class TestNrpePoller(ShinkenTest):
         control_queue.put(msg1)
         for _ in xrange(1, 2):
             control_queue.put(msg1)
-        # control_queue.put(msg1)
-        # control_queue.put(msg1)
-        # control_queue.put(msg1)
-        # control_queue.put(msg1)
+
         control_queue.put(msg2)
-        sl.work(to_queue, from_queue, control_queue)
 
-        o = from_queue.get() # pop()
-        print "O", o
+        inst.work(to_queue, from_queue, control_queue)
 
-        print o.__dict__
-        self.assert_(o.status == 'done')
-        self.assert_(o.exit_status == 2)
-
-        # to_queue.close()
-        # control_queue.close()
-
-
+        chk = from_queue.get()
+        self.assertEqual('done', chk.status)
+        self.assertEqual(2, chk.exit_status)
 
 
 if __name__ == '__main__':
