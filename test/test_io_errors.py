@@ -84,8 +84,14 @@ class Test_Errors(NrpePollerTestMixin,
 
         # GO
         inst.add_new_check(chk)
+
+        self.assertFalse(fake_server.cli_socks,
+                        'there should have no connected client '
+                        'to our fake server at this point')
+
         inst.launch_new_checks()
         self.assertEqual('launched', chk.status)
+        self.assertEqual(0, chk.retried)
 
         # launch_new_checks() really launch a new check :
         # it creates the nrpe client and directly make it to connect
@@ -95,10 +101,8 @@ class Test_Errors(NrpePollerTestMixin,
         # to sleep just a bit of time:
         time.sleep(0.1)
 
-        self.assertTrue(
-            fake_server.cli_socks,
-            'the client should have connected'
-            ' to our fake server')
+        self.assertTrue(fake_server.cli_socks,
+                        'the client should have connected to our fake server')
 
         # that should make the client to send us its request:
         asyncore.poll2(0)
@@ -117,7 +121,20 @@ class Test_Errors(NrpePollerTestMixin,
         asyncore.poll2(0)
         self.assertEqual("Error on read: boum", chk.con.message)
 
+        save_con = chk.con  # we have to retain the con because its unset
+
+        orig_logger = nrpe_poller.booster_nrpe.logger
+
+        log_mock = mock.MagicMock(wraps=nrpe_poller.booster_nrpe.logger)
+        nrpe_poller.booster_nrpe.logger = log_mock
+
+        # by manage_finished_checks :
         inst.manage_finished_checks()
+
+        log_mock.warning.assert_called_once_with(
+            '%s: Got an IO error (%s), retrying 1 more time.. (cur=%s)',
+            chk.command, save_con.message, 0)
+
         self.assertEqual('queue', chk.status)
         self.assertEqual(1, chk.retried,
                          "the client has got the error we raised")
@@ -129,10 +146,6 @@ class Test_Errors(NrpePollerTestMixin,
         for _ in range(2):
             asyncore.poll2(0)
             time.sleep(0.1)
-
-        log_mock = mock.MagicMock()
-        # orig_logger = nrpe_poller.booster_nrpe.logger # no need..
-        nrpe_poller.booster_nrpe.logger = log_mock
 
         inst.manage_finished_checks()
 
