@@ -25,7 +25,7 @@ class FakeNrpeServer(threading.Thread):
         sock = self.sock = socket.socket()
         sock.settimeout(1)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.bind(('localhost', port))
+        sock.bind(('127.0.0.1', port))
         if not port:
             self.port = sock.getsockname()[1]
         sock.listen(0)
@@ -81,7 +81,7 @@ class Test_Errors(NrpePollerTestMixin,
         inst.returns_queue = mock.MagicMock()
 
         # We prepare a check in the to_queue
-        command = ("$USER1$/check_nrpe -H localhost -p %s -n -u -t 5 -c check_load3 -a 20"
+        command = ("$USER1$/check_nrpe -H 127.0.0.1 -p %s -n -u -t 5 -c check_load3 -a 20"
                    % fake_server.port)
 
         chk = Check('queue', command, None, time.time())
