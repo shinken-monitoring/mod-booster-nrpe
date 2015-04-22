@@ -3,10 +3,16 @@ python:
   - "2.7"
   - "2.6"
 
-install:
-  - "[ -d test ] && ./test/setup_module_test.sh || : "
+env:
+  global:
+    - SHINKEN_DEST=$HOME/tmp_shinken
 
-script: "[ -d test ] && cd ~/shinken/test && nosetests -vx --with-coverage --cover-package=module || :"
+install:
+  - ./test/setup_module_test.sh
+
+script:
+  - export PYTHONPATH=$SHINKEN_DEST:$PYTHONPATH
+  - nosetests -xv --with-coverage --cover-package=booster_nrpe test
 
 after_success:
   coveralls
