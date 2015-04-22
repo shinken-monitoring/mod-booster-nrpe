@@ -33,8 +33,8 @@ class FakeNrpeServer(threading.Thread):
         self.start()
 
     def stop(self):
-        self.sock.close()
         self.running = False
+        self.sock.close()
 
     def run(self):
         while self.running:
@@ -43,17 +43,23 @@ class FakeNrpeServer(threading.Thread):
             except socket.error as err:
                 pass
             else:
+                # so that we won't block indefinitely in handle_connection
+                # in case the client doesn't send anything :
+                sock.settimeout(3)
                 self.cli_socks.append(sock)
                 self.handle_connection(sock)
-
-        for s in self.cli_socks:
-            s.close()
+                self.cli_socks.remove(sock)
 
     def handle_connection(self, sock):
         data = sock.recv(4096)
         # a valid nrpe response:
         data = b'\x00'*4 + b'\x00'*4 + b'\x00'*2 + 'OK'.encode() + b'\x00'*1022
         sock.send(data)
+        try:
+            sock.shutdown(socket.SHUT_RDWR)
+        except Exception:
+            pass
+        sock.close()
 
 
 class Test_Errors(NrpePollerTestMixin,
@@ -88,8 +94,12 @@ class Test_Errors(NrpePollerTestMixin,
                         'to our fake server at this point')
 
         inst.launch_new_checks()
+
         self.assertEqual('launched', chk.status)
         self.assertEqual(0, chk.retried)
+        self.assertEqual('Sending request and waiting response..',
+                         chk.con.message,
+                         "what? chk=%s " % chk)
 
         # launch_new_checks() really launch a new check :
         # it creates the nrpe client and directly make it to connect
@@ -99,8 +109,12 @@ class Test_Errors(NrpePollerTestMixin,
         # to sleep just a bit of time:
         time.sleep(0.1)
 
+        if not chk.con.connected:
+            asyncore.poll2(0)
+
         self.assertTrue(fake_server.cli_socks,
-                        'the client should have connected to our fake server')
+                        'the client should have connected to our fake server.\n'
+                        '-> %s' % chk.con.message)
 
         # that should make the client to send us its request:
         asyncore.poll2(0)
