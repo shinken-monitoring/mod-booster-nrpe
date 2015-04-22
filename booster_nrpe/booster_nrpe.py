@@ -317,6 +317,10 @@ class NRPEAsyncClient(asyncore.dispatcher, object):
     def is_done(self):
         return self.nrpe.state == 'received'
 
+    def handle_error(self):
+        err_type, err, tb = sys.exc_info()
+        self.set_exit(2, "Error: %s" % str(err))
+
 
 def parse_args(cmd_args):
     # Default params
