@@ -24,18 +24,11 @@
 #
 
 
-import asyncore
-
 import os
-import socket
-import threading
 import time
-import mock
-
 import logging
+
 logging.basicConfig(level=logging.DEBUG)
-
-
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
@@ -47,22 +40,18 @@ try:
 except ImportError:
     import unittest
 
+
 from shinken.objects.module import Module
-from shinken.modulesctx import modulesctx
 from shinken.message import Message
 
 
-THIS_DIR = os.path.abspath(os.path.dirname(__file__))
-
-modulesctx.set_modulesdir(os.path.dirname(THIS_DIR))
-nrpe_poller = modulesctx.get_module('booster_nrpe')
-get_instance = nrpe_poller.get_instance
+import booster_nrpe
 
 
 modconf = Module()
 modconf.module_name = "NrpePoller"
-modconf.module_type = nrpe_poller.properties['type']
-modconf.properties = nrpe_poller.properties.copy()
+modconf.module_type = booster_nrpe.properties['type']
+modconf.properties = booster_nrpe.properties.copy()
 
 
 class NrpePollerTestMixin(object):
@@ -72,8 +61,8 @@ class NrpePollerTestMixin(object):
         logger.setLevel(logging.DEBUG)
 
     def _setup_nrpe(self, modconf):
-        mod = nrpe_poller.booster_nrpe.Nrpe_poller(modconf)
-        inst = get_instance(mod)
+        mod = booster_nrpe.Nrpe_poller(modconf)
+        inst = booster_nrpe.get_instance(mod)
         inst.init()
         return inst
 

@@ -1,6 +1,5 @@
 
 import asyncore
-import logging
 import mock
 import socket
 import threading
@@ -8,14 +7,13 @@ import time
 
 from shinken.check import Check
 
-logging.basicConfig(level=logging.DEBUG)
-
 from test_simple import (
     unittest,
     modconf,
-    nrpe_poller,
     NrpePollerTestMixin,
 )
+
+from booster_nrpe import booster_nrpe
 
 
 class FakeNrpeServer(threading.Thread):
@@ -121,14 +119,12 @@ class Test_Errors(NrpePollerTestMixin,
         asyncore.poll2(0)
         self.assertEqual("Error on read: boum", chk.con.message)
 
-        save_con = chk.con  # we have to retain the con because its unset
+        save_con = chk.con  # we have to retain the con because its unset..
 
-        orig_logger = nrpe_poller.booster_nrpe.logger
+        log_mock = mock.MagicMock(wraps=booster_nrpe.logger)
+        booster_nrpe.logger = log_mock
 
-        log_mock = mock.MagicMock(wraps=nrpe_poller.booster_nrpe.logger)
-        nrpe_poller.booster_nrpe.logger = log_mock
-
-        # by manage_finished_checks :
+        # ..by manage_finished_checks :
         inst.manage_finished_checks()
 
         log_mock.warning.assert_called_once_with(
