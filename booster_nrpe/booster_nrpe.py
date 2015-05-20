@@ -114,32 +114,30 @@ class NRPE(object):
         # we restart with the crc value this time
         # because python2.4 do not have pack_into.
         self.query = struct.pack(">2hih1024scc", 02, 01, crc, 0, command, 'N', 'D')
+        self.message = ''
 
-
-    # Read a return and extract return code
-    # and output
     def read(self, data):
-        # TODO: Not sure to get all the data in one shot.
-        # TODO we should buffer it until we get enough to unpack.
-
         if self.state == 'received':
             return self.rc, self.message
-
+        prev_state = self.state
         self.state = 'received'
-        # TODO: check crc
-
         try:
-            response = struct.unpack(">2hih1024s", data)
+            version, pktype, crc, rc, response = struct.unpack(">2hih1024s", data)
         except struct.error as err:  # bad format...
             self.rc = 3
             self.message = ("Error : cannot unpack output ; "
                             "datalen=%s : err=%s" % (len(data), err))
         else:
-            self.rc = response[3]
-            # the output is padded with \x00 at the end so
-            # we remove it.
-            self.message = re.sub('\x00.*$', '', response[4])
-            crc_orig = response[2]
+            # TODO: check the crc ..
+            self.rc = rc
+            # the output is padded with \x00 at the end so we remove it.
+            self.message += re.sub('\x00.*$', '', response)
+
+            # pktype == 3 : RESPONSE_PACKET_WITH_MORE ;
+            # see http://tracker.nagios.org/view.php?id=564
+            # for reference.
+            if pktype == 3:
+                self.state = prev_state
 
         return self.rc, self.message
 
@@ -279,6 +277,9 @@ class NRPEAsyncClient(asyncore.dispatcher, object):
             # or our arguments...)
             if buf:
                 rc, message = self.nrpe.read(buf)
+                if self.nrpe.state != 'received':
+                    # we are not done yet.
+                    return
             else:
                 rc = 2
                 message = "Error: Empty response from the NRPE server. Are we blacklisted ?"
