@@ -1,6 +1,5 @@
 
 import asyncore
-import logging
 import mock
 import socket
 import threading
@@ -8,14 +7,13 @@ import time
 
 from shinken.check import Check
 
-logging.basicConfig(level=logging.DEBUG)
-
 from test_simple import (
     unittest,
     modconf,
-    nrpe_poller,
     NrpePollerTestMixin,
 )
+
+from booster_nrpe import booster_nrpe
 
 
 class FakeNrpeServer(threading.Thread):
@@ -27,7 +25,7 @@ class FakeNrpeServer(threading.Thread):
         sock = self.sock = socket.socket()
         sock.settimeout(1)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.bind(('localhost', port))
+        sock.bind(('127.0.0.1', port))
         if not port:
             self.port = sock.getsockname()[1]
         sock.listen(0)
@@ -35,8 +33,8 @@ class FakeNrpeServer(threading.Thread):
         self.start()
 
     def stop(self):
-        self.sock.close()
         self.running = False
+        self.sock.close()
 
     def run(self):
         while self.running:
@@ -45,17 +43,23 @@ class FakeNrpeServer(threading.Thread):
             except socket.error as err:
                 pass
             else:
+                # so that we won't block indefinitely in handle_connection
+                # in case the client doesn't send anything :
+                sock.settimeout(3)
                 self.cli_socks.append(sock)
                 self.handle_connection(sock)
-
-        for s in self.cli_socks:
-            s.close()
+                self.cli_socks.remove(sock)
 
     def handle_connection(self, sock):
         data = sock.recv(4096)
         # a valid nrpe response:
         data = b'\x00'*4 + b'\x00'*4 + b'\x00'*2 + 'OK'.encode() + b'\x00'*1022
         sock.send(data)
+        try:
+            sock.shutdown(socket.SHUT_RDWR)
+        except Exception:
+            pass
+        sock.close()
 
 
 class Test_Errors(NrpePollerTestMixin,
@@ -77,15 +81,25 @@ class Test_Errors(NrpePollerTestMixin,
         inst.returns_queue = mock.MagicMock()
 
         # We prepare a check in the to_queue
-        command = ("$USER1$/check_nrpe -H localhost -p %s -n -u -t 5 -c check_load3 -a 20"
+        command = ("$USER1$/check_nrpe -H 127.0.0.1 -p %s -n -u -t 5 -c check_load3 -a 20"
                    % fake_server.port)
 
         chk = Check('queue', command, None, time.time())
 
         # GO
         inst.add_new_check(chk)
+
+        self.assertFalse(fake_server.cli_socks,
+                        'there should have no connected client '
+                        'to our fake server at this point')
+
         inst.launch_new_checks()
+
         self.assertEqual('launched', chk.status)
+        self.assertEqual(0, chk.retried)
+        self.assertEqual('Sending request and waiting response..',
+                         chk.con.message,
+                         "what? chk=%s " % chk)
 
         # launch_new_checks() really launch a new check :
         # it creates the nrpe client and directly make it to connect
@@ -95,10 +109,12 @@ class Test_Errors(NrpePollerTestMixin,
         # to sleep just a bit of time:
         time.sleep(0.1)
 
-        self.assertTrue(
-            fake_server.cli_socks,
-            'the client should have connected'
-            ' to our fake server')
+        if not chk.con.connected:
+            asyncore.poll2(0)
+
+        self.assertTrue(fake_server.cli_socks,
+                        'the client should have connected to our fake server.\n'
+                        '-> %s' % chk.con.message)
 
         # that should make the client to send us its request:
         asyncore.poll2(0)
@@ -117,7 +133,18 @@ class Test_Errors(NrpePollerTestMixin,
         asyncore.poll2(0)
         self.assertEqual("Error on read: boum", chk.con.message)
 
+        save_con = chk.con  # we have to retain the con because its unset..
+
+        log_mock = mock.MagicMock(wraps=booster_nrpe.logger)
+        booster_nrpe.logger = log_mock
+
+        # ..by manage_finished_checks :
         inst.manage_finished_checks()
+
+        log_mock.warning.assert_called_once_with(
+            '%s: Got an IO error (%s), retrying 1 more time.. (cur=%s)',
+            chk.command, save_con.message, 0)
+
         self.assertEqual('queue', chk.status)
         self.assertEqual(1, chk.retried,
                          "the client has got the error we raised")
@@ -129,10 +156,6 @@ class Test_Errors(NrpePollerTestMixin,
         for _ in range(2):
             asyncore.poll2(0)
             time.sleep(0.1)
-
-        log_mock = mock.MagicMock()
-        # orig_logger = nrpe_poller.booster_nrpe.logger # no need..
-        nrpe_poller.booster_nrpe.logger = log_mock
 
         inst.manage_finished_checks()
 

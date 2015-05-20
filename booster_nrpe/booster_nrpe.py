@@ -55,11 +55,11 @@ else:
 
     # consider SSLError's to also be a kind of communication error.
     communication_errors += (SSLError,)
-    # effectively, under SSL mode, any TCP reset or so failure
+    # effectively, under SSL mode, any TCP reset or such failure
     # will be raised as such an instance of SSLError, which isn't
     # a subclass of IOError nor socket.error but we want to catch
     # both so to retry a check in such cases.
-    # search for 'retried' and 'readwrite_error' in the code..
+    # Look for 'retried' and 'readwrite_error' in the code..
 
 
 from shinken.basemodule import BaseModule
@@ -317,6 +317,10 @@ class NRPEAsyncClient(asyncore.dispatcher, object):
     def is_done(self):
         return self.nrpe.state == 'received'
 
+    def handle_error(self):
+        err_type, err, tb = sys.exc_info()
+        self.set_exit(2, "Error: %s" % str(err))
+
 
 def parse_args(cmd_args):
     # Default params
@@ -452,8 +456,8 @@ class Nrpe_poller(BaseModule):
                 # serializable..
                 del check.con
                 if con.readwrite_error and check.retried < 2:
-                    logger.warning('%s: IO error, retrying 1 more time.. (cur=%s)',
-                                   check.command, check.retried)
+                    logger.warning('%s: Got an IO error (%s), retrying 1 more time.. (cur=%s)',
+                                   check.command, con.message, check.retried)
                     check.retried += 1
                     check.status = 'queue'
                     continue
