@@ -16,6 +16,13 @@ The NRPE module allows Shinken Pollers to bypass the launch of the check_nrpe pr
 The command definitions should be identical to the check_nrpe calls.
 
 
+Requirements
+=============
+
+
+Please install `pyOpenssl` Python wrapper module around the OpenSSL library.
+
+
 How to define it 
 =================
 
