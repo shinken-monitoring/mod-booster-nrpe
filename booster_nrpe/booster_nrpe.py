@@ -415,13 +415,18 @@ class Nrpe_poller(BaseModule):
                     command = None
 
                 # If we do not have the good args, we bail out for this check
-                if command is None or host is None:
+                if host is None:
                     check.status = 'done'
                     check.exit_status = 2
                     check.get_outputs('Error: the parameters host '
-                                      'or command are not correct.', 8012)
+                                      'is not correct.', 8012)
                     check.execution_time = 0
                     continue
+
+                # if no command is specified, check_nrpe
+                # sends _NRPE_CHECK as default command.
+                if command is None:
+                    command = '_NRPE_CHECK'
 
                 # Ok we are good, we go on
                 total_args = [command]
